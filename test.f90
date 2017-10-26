@@ -1,25 +1,29 @@
 program test
-    use lattice 
+    use polymer
     implicit none
-    integer::n,zer,one,two,thr,i
-    integer,dimension(:),allocatable::arr
-    n = 10
+    integer::n,i,j,m
+    real *8,allocatable::results(:,:),arr(:,:),r(:)
 
-    arr = genpoly(n)
-    zer = 0
-    one = 0
-    two = 0
-    thr = 0
-    do i=1,n
-        if(arr(i)==0)then
-            zer = zer+1
-        elseif(arr(i)==1)then
-            one = one+1
-        elseif(arr(i)==2)then
-            two = two+1
-        elseif(arr(i)==3)then
-            thr = thr+1
-        endif
+    n = 10000
+    m = 100
+    allocate(arr(n,2),results(m,n))
+
+    do i=1,m
+        arr = genpoly(n)
+        results(i,1) = sqrt(arr(1,1)**2+arr(1,2)**2)
+        do j=2,n
+            arr(j,:) = arr(j,:)+arr(j-1,:)
+            results(i,j) = sqrt(sum(arr(j,:)**2))
+        enddo
+        
     enddo
-    write(*,*) zer,one,two,thr,n
+
+
+    open(1,file='results.dat')
+    do i=1,m
+        do j=1,n
+            write(1,*) results(j,i)
+        enddo
+    enddo
+    close(1)
 endprogram test
