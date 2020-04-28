@@ -116,11 +116,11 @@ def rsq_scaling(lam):
     for i in range(nl):
         p0 = zeros((3,int(floor(ls[i]))))
         p0[2,:] = linspace(-ls[i]/2,ls[i]/2,ls[i])
-        pos,rsqh = backbone_evol(p0,1,1,1,lam,0.01,nsteps,0)
+        pos,rsqh = backbone_evol(p0,1,1,1,lam,0.00001,nsteps,0)
         rsqs[i] = mean(rsqh)
         rsqsp[i] = std(rsqh)
 
-    return rsqs,rsqsp
+    return ls,rsqs,rsqsp
 
 def sample_walk(n):
     r1 = rand(n)
