@@ -23,7 +23,7 @@ def backbone_evol(p0,l,k,T,lam,dt,nsteps,ifmov=0):
 
     np = p0.shape[1]
     print(b*dt)
-    print(((2**(1/6)-1)*l*0.6))
+    print(((2**(1./6)-1)*l*0.3))
     noises = b*randn(3,np,nsteps)
     rsqhist = zeros(nsteps)
     pos = p0.copy()
@@ -108,14 +108,13 @@ def interac(r,eps,lam,sig):
         return 0
 
 def rsq_scaling(lam):
-    nl = 10
+    nl = 5
     ls = logspace(1,2.5,nl)
-    nsteps = 10^5
+    nsteps = 10**5
     rsqs = zeros(nl)
     rsqsp = zeros(nl)
     for i in range(nl):
-        p0 = zeros((3,int(floor(ls[i]))))
-        p0[2,:] = linspace(-ls[i]/2,ls[i]/2,ls[i])
+        p0 = sample_walk(int(ls[i]))
         pos,rsqh = backbone_evol(p0,1,1,1,lam,0.00001,nsteps,0)
         rsqs[i] = mean(rsqh)
         rsqsp[i] = std(rsqh)
