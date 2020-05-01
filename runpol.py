@@ -14,7 +14,7 @@ lam_swol = 0
 lam_coll = 10
 
 nsamp = 1
-nstep = 10
+nstep = 10**5
 pollength = 30
 
 if typ==0: #ideal chain
