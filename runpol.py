@@ -18,7 +18,7 @@ nstep = 10**5
 pollength = 30
 
 if typ==0: #ideal chain
-    mr_id,sr_id,rv_id = sp.getscal(nsamp,pollength,l,k,g,m,T,0,0.01,nstep,1)
+    mr_id,sr_id,rv_id = sp.getscal(nsamp,pollength,l,k,g,m,T,0,0.01,nstep,ifid = 1)
     savetxt("datfiles/ideal"+str(n)+".txt",rv_id)
 
 elif typ==1: #swollen chain

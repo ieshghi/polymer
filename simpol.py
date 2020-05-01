@@ -66,8 +66,6 @@ def backbone_evol(p0,l,k,g,m,T,lam,dt,nsteps,ifmov=0,ifid = 0):
     mag = sqrt(2*g*T*dt)
 
     np = p0.shape[1]
-    print(mag*dt)
-    print(((2**(1./6)-1)*sig))
     noises = mag*randn(3,np,nsteps+1)
     rsqhist = zeros(nsteps)
     dhist = zeros((nsteps,np-1))
