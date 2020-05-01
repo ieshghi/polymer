@@ -22,9 +22,9 @@ if typ==0: #ideal chain
     savetxt("datfiles/ideal"+str(n)+".txt",rv_id)
 
 elif typ==1: #swollen chain
-    mr_swol,sr_swol,rv_swol = sp.getscal(nsamp,pollength,l,k,g,m,T,lam_swol,0.01,nstep,0)
+    mr_swol,sr_swol,rv_swol = sp.getscal(nsamp,pollength,l,k,g,m,T,lam_swol,0.01,nstep,ifid = 0)
     savetxt("datfiles/swol"+str(n)+".txt",rv_swol)
 
 elif typ==2: #collapsed chain
-    mr_coll,sr_coll,rv_coll = sp.getscal(nsamp,pollength,l,k,g,m,T,lam_coll,0.01,nstep,0)
+    mr_coll,sr_coll,rv_coll = sp.getscal(nsamp,pollength,l,k,g,m,T,lam_coll,0.01,nstep,ifid = 0)
     savetxt("datfiles/coll"+str(n)+".txt",rv_swol)
