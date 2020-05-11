@@ -91,8 +91,10 @@ def backbone_evol(p0,l,k,g,m,T,lam,dt,nsteps,ifmov=0,ifid = 0):
 
         a = (1-g*dt/(2*m))/(1+g*dt/(2*m))
         b = 1/(1+g*dt/(2*m))
-        force = spring(pos,l,k)+(1-ifid)*manybod(pos,lam,sig,T)
-
+        if ifid==1:
+            force = spring(pos,l,k)
+        else:
+            force = spring(pos,l,k)+manybod(pos,lam,sig,T)
 
         dp = checksize(timestep_verlet(pos,pold,force,noises[:,:,i],noises[:,:,i+1],dt,a,b,m),l,sig)
         pold = pos.copy()
