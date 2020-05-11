@@ -27,4 +27,4 @@ elif typ==1: #swollen chain
 
 elif typ==2: #collapsed chain
     mr_coll,sr_coll,rv_coll = sp.getscal(nsamp,pollength,l,k,g,m,T,lam_coll,0.01,nstep,ifid = 0)
-    savetxt("datfiles/coll"+str(n)+".txt",rv_swol)
+    savetxt("datfiles/coll"+str(n)+".txt",rv_coll)
