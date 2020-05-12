@@ -17,7 +17,7 @@ r_swol = zeros((n_each,ex.size))
 for i in range(n_each):
     r_swol[i,:] = loadtxt("datfiles/swol"+str(i+1)+".txt")
 
-savetxt("datfiles/swols.txt",r_id)
+savetxt("datfiles/swols.txt",r_swol)
 
 #first, collect ideals
 r_coll = zeros((n_each,ex.size))
