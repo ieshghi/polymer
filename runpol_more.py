@@ -17,7 +17,7 @@ m = 0.2
 T = 1
 
 nsamp = 1
-nstep = 1#10**5
+nstep = 10**5
 pollength = 30
 
 mr,sr,rv = sp.getscal(nsamp,pollength,l,k,g,m,T,lams[typ],0.01,nstep,ifid=0)
