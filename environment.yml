@@ -1,0 +1,7 @@
+name: poly-env
+dependencies:
+- python
+- pip
+- numpy
+- scipy
+- pytorch
