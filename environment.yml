@@ -85,5 +85,6 @@ dependencies:
       - python-dateutil==2.8.2
       - pytz==2023.3
       - seaborn==0.12.2
+      - tqdm==4.66.1
       - tzdata==2023.3
 prefix: /gpfs/commons/home/ieshghi/miniconda3/envs/poly-env
