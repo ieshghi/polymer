@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import normflows as nf
 from tqdm import tqdm
+import itertools
 
 sns.set_style('whitegrid')
 
@@ -29,49 +30,55 @@ else:
 	torch.set_default_tensor_type(torch.DoubleTensor)
 	print(f"TORCH DEVICE: {torch_device}")
 
-# we want to sample SAWs on a 3d lattice first. To do this, treat it like sampling from a Boltzmann distribution and make a strong repulsive interaction energy?
-def cont2int(steps):
-	return torch.round((steps + 0.5)*6)[0] #assume steps is distributed between -1 and 1
-
-class conform: #stores a polymer conformation
-	def __init__(self,steps,initpos = torch.Tensor([0,0,0])):
-		self.steps = cont2int(steps)
-		self.initpos = initpos
-		self.step2vec = {0:torch.Tensor([0,1,0]),1:torch.Tensor([0,-1,0]),2:torch.Tensor([1,0,0]),3:torch.Tensor([-1,0,0]),4:torch.Tensor([0,0,1]),5:torch.Tensor([0,0,-1])}    # Convention: "steps" is an (N-1)x1 array where N is the number of monomers in the chain. Each step is a number from 0-5. 0: up (y+), 1: down(y-), 2: right(x+), 3:left(x-), 4:out of the page(z+), 5:into the page(z-)
-	def get_points(self): #"steps" is the array of steps in the lattice SAW. We must convert from "steps" to an array of positions, and from there evaluate the probability distribution (here we'll treat it as Boltzmann for now).
-		return torch.cumsum(torch.stack([self.step2vec.get(int(i)) for i in self.steps]),dim=0) + self.initpos 
-
 class energyfunc(nn.Module): #give a penalty = sigma for each overlapping pair of monomers
-	def __init__(self,sigma = 10,bdry=False,constraints = False):
+	def __init__(self,sigma = 10,lcol = 0.1,bdry=False,constraints = False): #assume step size is unit length, lcol is collision distance
 		super(energyfunc, self).__init__()
 		self.bdry = bdry #if this is set to a finite number, it is the radius of the confining sphere in lattice units
 		self.sigma = sigma #interaction energy for overlapping monomers, in units of K_b T. Probability of overlap should scale like exp(-sigma)
 		self.constraints = constraints #for when we want to eventually include constraints from pore-c or something
 
-	def forward(self,steps):
+	def forward(self,confdata):
 		energ = 0
-		conf = conform(steps).get_points()
+        polypos = get_poly(confdata)
 		if self.constraints:
 			energ += check_constraints(conf)
 		if self.bdry:
 			energ += check_bdry(conf)
-		energ += (conf.shape[0]-conf.unique(dim=0).shape[0])*self.sigma
+		energ += sigma*collisions(polypos,lcol)
 		return energ
 
 	def check_constraints(self,config):
 		return 0
 	def check_bdry(self,config):
 		return 0
+    def collisions(positions,lcol):
+        dists = np.array([torch.linalg.norm(x[0]-x[1]) for x in itertools.combinations(positions, 2)])   
+        return torch.sum(1/(1+torch.exp(-dists/lcol))) #punish overlap within distance lcol with a sigmoid function
+    def get_poly(confdata):
+        positions = []
+        positions.append(confdata[0:3]) 
+        confdata = confdata[3:]
+        randvals = [i for i in zip(confdata[::2],confdata[1::2])]
+        steps = map(randtovec,randvals)
 
-N = 1000
-prior = nf.distributions.UniformGaussian(N,range(0,N),torch.ones(N))
+def randtovec(p):
+    ph = (p[0] + 0.5)*2*np.pi
+    th = torch.acos(1-2*(p[1])) #i think the nf.dists module makes uniform distributions on [-0.5,0.5]
+    x = torch.sin(th)*torch.cos(ph)
+    y = torch.sin(th)*torch.sin(ph)
+    z = torch.cos(th)
+    return torch.Tensor([x,y,z])
+
+N = 100
+dof = 3+2*(N-1) # 3 degrees of freedom for the position of the first monomer, then 2 dof for the 3d orientation of (N-1) unit vectors in an N-step SAW
+prior = nf.distributions.UniformGaussian(dof,range(0,dof),torch.ones(dof))
 
 num_layers = 20
 flow_layers = []
 for i in range(num_layers):
     # Neural network with two hidden layers having 64 units each
     # Last layer is initialized by zeros making training more stable
-    param_map = nf.nets.MLP([1, 64, 64, N], init_zeros=True)
+    param_map = nf.nets.MLP([1, 64, 64, dof], init_zeros=True)
     # Add flow layer
     flow_layers.append(nf.flows.AffineCouplingBlock(param_map))
 
@@ -86,7 +93,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=1e-4, weight_decay=1e-6)
 config = prior.sample()
 for it in tqdm(range(max_iter)):
     optimizer.zero_grad()
-    loss = energyfunc(config)
+    loss = np.exp(-energyfunc(config))
     if ~(torch.isnan(loss) | torch.isinf(loss)):
         loss.backward()
         optimizer.step()
