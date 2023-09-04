@@ -34,9 +34,9 @@ else:
     torch.set_default_tensor_type(torch.DoubleTensor)
     print(f"TORCH DEVICE: {torch_device}")
 
-class energyfunc(nn.Module): #give a penalty = sigma for each overlapping pair of monomers
-    def __init__(self,sigma = 10,lcol = 0.1,bdry=False,constraints = False): #assume step size is unit length, lcol is collision distance
-        super(energyfunc, self).__init__()
+class energyfunc_loss(nn.Module): #give a penalty = sigma for each overlapping pair of monomers
+    def __init__(self,sigma = 10,lcol = 0.5,bdry=False,constraints = False): #assume step size is unit length, lcol is collision distance
+        super(energyfunc_loss, self).__init__()
         self.bdry = bdry #if this is set to a finite number, it is the radius of the confining sphere in lattice units
         self.sigma = sigma #interaction energy for overlapping monomers, in units of K_b T. Probability of overlap should scale like exp(-sigma)
         self.constraints = constraints #for when we want to eventually include constraints from pore-c or something
@@ -87,9 +87,10 @@ flow_layers = []
 for i in range(num_layers):
     # Neural network with two hidden layers having 64 units each
     # Last layer is initialized by zeros making training more stable
-    param_map = nf.nets.MLP([1, 64, 64, dof], init_zeros=True)
+    param_map = nf.nets.MLP([dof, 64, 64, dof], init_zeros=True)
     # Add flow layer
     flow_layers.append(nf.flows.AffineCouplingBlock(param_map))
+    flow_layers.append(nf.flows.Permute(dof, mode='swap'))
 
 model = nf.NormalizingFlow(prior,flow_layers)
 
@@ -99,15 +100,16 @@ show_iter = 1000
 loss_hist = np.array([])
 
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-4, weight_decay=1e-6)
-config = prior.sample()
-for it in tqdm(range(max_iter)):
-    optimizer.zero_grad()
-    loss = np.exp(-energyfunc(config))
-    if ~(torch.isnan(loss) | torch.isinf(loss)):
-        loss.backward()
-        optimizer.step()
-    
-    loss_hist = np.append(loss_hist, loss.to('cpu').data.numpy())
+loss_func = energyfunc_loss()
+#for it in tqdm(range(max_iter)):
+#    optimizer.zero_grad()
+#    config = prior.sample()
+#    output = model(
+#    if ~(torch.isnan(loss_func) | torch.isinf(loss_func)):
+#        loss_func.backward()
+#        optimizer.step()
+#    
+#    loss_hist = np.append(loss_hist, loss.to('cpu').data.numpy())
     
 ## Plot loss
 #plt.figure(figsize=(10, 10))
