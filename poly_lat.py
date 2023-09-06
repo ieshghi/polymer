@@ -43,8 +43,13 @@ class energyfunc_loss(nn.Module): #give a penalty = sigma for each overlapping p
         self.lcol = lcol
 
     def forward(self,confdata):
+        n = confdata.shape[0]
+        energies = map(self.evaluate_chain,[confdata[i,:] for i in range(n)])
+        return sum(list(energies))
+
+    def evaluate_chain(self,single_conf):
         energ = torch.Tensor([0])
-        polypos = self.get_poly(confdata)
+        polypos = self.get_poly(single_conf)
         if self.constraints:
             energ += self.check_constraints(conf)
         if self.bdry:
@@ -61,8 +66,7 @@ class energyfunc_loss(nn.Module): #give a penalty = sigma for each overlapping p
         dists = dists[dists>0]
 #        return torch.sum((self.lcol/dists)**12-(self.lcol/dists)**6) #punish overlap within distance lcol with a lennard-jones potential (this is a bit aggressive maybe)
         return torch.sum(torch.exp(-(dists/self.lcol)**2)) #punish overlap within distance lcol with a lennard-jones potential (this is a bit aggressive maybe)
-    def get_poly(self,confdat):
-        confdata = confdat[0]
+    def get_poly(self,confdata):
         init_pos = confdata[1:4].reshape(1,3)
         confdata = confdata[4:] + 0.5 #shift the uniform random numbers up so they range [0,1]
         r1 = confdata[::2]
@@ -96,7 +100,7 @@ def run():
     
     model = nf.NormalizingFlow(prior,flow_layers)
     
-    max_iter = 20000
+    max_iter = 2000
     anneal_iter = 10000
     show_iter = 1000
     num_samples = 1
@@ -118,8 +122,12 @@ def run():
 
     return loss_hist,model
     
-## Plot loss
-#plt.figure(figsize=(10, 10))
-#plt.plot(loss_hist, label='loss')
-#plt.legend()
-#plt.savefig('~/public_html/polygen/bla.png') 
+loss_hist,model = run()
+
+torch.save(model,'model.pickle')
+
+# Plot loss
+plt.figure(figsize=(10, 10))
+plt.plot(loss_hist, label='loss')
+plt.legend()
+plt.savefig('~/public_html/polygen/loss_hist.png') 
