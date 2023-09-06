@@ -43,7 +43,7 @@ class energyfunc_loss(nn.Module): #give a penalty = sigma for each overlapping p
         self.lcol = lcol
 
     def forward(self,confdata):
-        energ = 0
+        energ = torch.Tensor([0])
         polypos = self.get_poly(confdata)
         if self.constraints:
             energ += self.check_constraints(conf)
@@ -57,12 +57,14 @@ class energyfunc_loss(nn.Module): #give a penalty = sigma for each overlapping p
     def check_bdry(self,config):
         return 0
     def collisions(self,positions):
-        dists = torch.Tensor(pairwise_distances(positions))
-        return torch.sum(1/(1+torch.exp(-dists/self.lcol))) #punish overlap within distance lcol with a sigmoid function
+        dists = torch.Tensor(pairwise_distances(positions.detach().numpy()))
+        dists = dists[dists>0]
+#        return torch.sum((self.lcol/dists)**12-(self.lcol/dists)**6) #punish overlap within distance lcol with a lennard-jones potential (this is a bit aggressive maybe)
+        return torch.sum(torch.exp(-(dists/self.lcol)**2)) #punish overlap within distance lcol with a lennard-jones potential (this is a bit aggressive maybe)
     def get_poly(self,confdat):
         confdata = confdat[0]
-        init_pos = confdata[0:3].reshape(1,3)
-        confdata = confdata[3:] + 0.5 #shift the uniform random numbers up so they range [0,1]
+        init_pos = confdata[1:4].reshape(1,3)
+        confdata = confdata[4:] + 0.5 #shift the uniform random numbers up so they range [0,1]
         r1 = confdata[::2]
         r2 = confdata[1::2]
         steps = randtovec(r1,r2)
@@ -78,38 +80,43 @@ def randtovec(r1,r2):
     z = torch.cos(th)
     return torch.stack([x,y,z])
 
-N = 100
-dof = 3+2*(N-1) # 3 degrees of freedom for the position of the first monomer, then 2 dof for the 3d orientation of (N-1) unit vectors in an N-step SAW
-prior = nf.distributions.UniformGaussian(dof,range(dof),torch.ones(dof)) #get random numbers uniformly distributed between -1/2 and 1/2
-#
-num_layers = 20
-flow_layers = []
-for i in range(num_layers):
-    # Neural network with two hidden layers having 64 units each
-    # Last layer is initialized by zeros making training more stable
-    param_map = nf.nets.MLP([dof, 64, 64, dof], init_zeros=True)
-    # Add flow layer
-    flow_layers.append(nf.flows.AffineCouplingBlock(param_map))
-    flow_layers.append(nf.flows.Permute(dof, mode='swap'))
+def run():
+    N = 100
+    dof = 4 + 2*(N-1) # 3 degrees of freedom for the position of the first monomer, then 2 dof for the 3d orientation of (N-1) unit vectors in an N-step SAW + 1 fake dof just so it's an even number
+    prior = nf.distributions.UniformGaussian(dof,range(dof),torch.ones(dof)) #get random numbers uniformly distributed between -1/2 and 1/2
+    #
+    num_layers = 10
+    flow_layers = []
+    for i in range(num_layers):
+        # Neural network with two hidden layers having 64 units each
+        # Last layer is initialized by zeros making training more stable
+        param_map = nf.nets.MLP([dof//2, 64, 64, dof], init_zeros=True)
+        # Add flow layer
+        flow_layers.append(nf.flows.AffineCouplingBlock(param_map))
+    
+    model = nf.NormalizingFlow(prior,flow_layers)
+    
+    max_iter = 20000
+    anneal_iter = 10000
+    show_iter = 1000
+    num_samples = 1
+    loss_hist = np.array([])
+    
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4, weight_decay=1e-6)
+    loss_func = energyfunc_loss()
+    for it in tqdm(range(max_iter)):
+        optimizer.zero_grad()
+        config = prior.sample(num_samples)
+        output = model(config)
+        loss = loss_func.forward(output)
+        loss.requires_grad=True
+        if ~(torch.isnan(loss) | torch.isinf(loss)):
+            loss.backward()
+            optimizer.step()
+        
+        loss_hist = np.append(loss_hist, loss.to('cpu').data.numpy())
 
-model = nf.NormalizingFlow(prior,flow_layers)
-
-max_iter = 20000
-anneal_iter = 10000
-show_iter = 1000
-loss_hist = np.array([])
-
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-4, weight_decay=1e-6)
-loss_func = energyfunc_loss()
-#for it in tqdm(range(max_iter)):
-#    optimizer.zero_grad()
-#    config = prior.sample()
-#    output = model(
-#    if ~(torch.isnan(loss_func) | torch.isinf(loss_func)):
-#        loss_func.backward()
-#        optimizer.step()
-#    
-#    loss_hist = np.append(loss_hist, loss.to('cpu').data.numpy())
+    return loss_hist,model
     
 ## Plot loss
 #plt.figure(figsize=(10, 10))
