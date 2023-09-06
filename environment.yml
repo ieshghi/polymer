@@ -75,6 +75,7 @@ dependencies:
       - contourpy==1.1.0
       - cycler==0.11.0
       - fonttools==4.42.1
+      - joblib==1.3.2
       - kiwisolver==1.4.5
       - matplotlib==3.7.2
       - normflows==1.7.2
@@ -84,7 +85,9 @@ dependencies:
       - pyparsing==3.0.9
       - python-dateutil==2.8.2
       - pytz==2023.3
+      - scikit-learn==1.3.0
       - seaborn==0.12.2
+      - threadpoolctl==3.2.0
       - tqdm==4.66.1
       - tzdata==2023.3
-prefix: /gpfs/commons/home/ieshghi/miniconda3/envs/poly-env
+prefix: /home/ieshghi/miniconda3/envs/poly-env
