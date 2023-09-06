@@ -20,7 +20,7 @@ import itertools
 import multiprocessing as mp
 from sklearn.metrics import pairwise_distances
 num_c = mp.cpu_count()
-pool = mp.Pool(processes = num_c)
+pool = mp.Pool(processes = 5)
 
 sns.set_style('whitegrid')
 
@@ -97,6 +97,7 @@ def run():
         param_map = nf.nets.MLP([dof//2, 64, 64, dof], init_zeros=True)
         # Add flow layer
         flow_layers.append(nf.flows.AffineCouplingBlock(param_map))
+        flow_layers.append(nf.flows.Permute(2, mode='swap'))
     
     model = nf.NormalizingFlow(prior,flow_layers)
     
@@ -130,4 +131,4 @@ torch.save(model,'model.pickle')
 plt.figure(figsize=(10, 10))
 plt.plot(loss_hist, label='loss')
 plt.legend()
-plt.savefig('~/public_html/polygen/loss_hist.png') 
+plt.savefig('/gpfs/commons/home/ieshghi/public_html/polygen/loss_hist.png')
