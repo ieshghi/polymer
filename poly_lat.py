@@ -54,36 +54,40 @@ class energyfunc_loss(nn.Module): #give a penalty = sigma for each overlapping p
         self.ltouch = ltouch #distance at which contacts are registered
         self.lcol = lcol #distance below which monomers are not allowed to go
         self.N = N
-        self.contact_logexp = get_contact_exp().log()
+        self.contact_logexp = self.get_contact_exp().log()
+        self.eps = 1e-8
 
     def forward(self,confdata):
         polymers = randtopoly(confdata)
         distances = torch.cdist(polymers,polymers)
         
-        dists = torch.triu(distances)
-        dists = dists[dists>0]
+#        dists = torch.triu(distances)
+#        dists = dists[dists>0]
 #        collision_energy = self.sigma*torch.sum(1-smoothstep(dists/self.lcol)) #punish collisions with a smoothed step function
-        fractal_loss = contacts_kld(torch.sum(1-smoothstep(distances/self.ltouch),axis=0).triu()) #count contacts with a smoothed step function
+        contacts = (self.eps + torch.sum(1-smoothstep(distances/self.ltouch),axis=0)).triu(diagonal=2)
+        fractal_loss = self.contacts_kld(contacts[contacts>0])
 
 #        tot_energy = collision_energy + fractal_loss
-        tot_energy = fractal_loss
-        return tot_energy
+        tot_loss = fractal_loss
+        return tot_loss
 
     def check_constraints(self,positions):
         return 0
 
     def get_contact_exp(self):
         inds = torch.arange(self.N)
-        smat = torch.zeros(N,N)
-		for i in range(N):
-			smat[i,:] = torch.abs(int-i)
+        smat = torch.zeros(self.N,self.N)
+        for i in range(self.N):
+            smat[i,:] = torch.abs(inds-i)
 
-		pmat = (1/smat).triu()
-        return pmat/torch.sum(pmat)        
+        pmat = (1.0/smat).triu(diagonal=2)
+        pmat_norm = (pmat/torch.sum(pmat)).triu(diagonal=2)
+        return pmat_norm[pmat_norm>0]
 
     def contacts_kld(self,contacts):
         probs = contacts/torch.sum(contacts) 
-        return torch.nansum(probs*(probs.log()-self.contact_logexp))
+        kld_persite = (probs*(probs.log()-self.contact_logexp))
+        return torch.sum(kld_persite)
 
 def randtopoly(confdata):
     r1 = confdata[:,::2].transpose(0,1) #even indices give (phi/pi - 1)/2
@@ -122,16 +126,19 @@ def run(N = 1000,ifsave=True,nam='model',use_pretrained=False,load_nam='model'):
         model = torch.load('models/'+nam+'.pickle')
         loss_func = energyfunc_loss()
     else:
-        model,loss_func = get_raw_model_and_loss(N)
+        model,loss_func = get_raw_model_and_loss(N,num_layers=20)
     
     model = model.to(torch_device)
+    loss_func = loss_func.to(torch_device)
 
     max_iter = 10000
     show_iter = 100
     num_samples = 100
+#    clip_value = 5 #using gradient clipping
     loss_hist = np.array([])
     
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+#    torch.autograd.set_detect_anomaly(True)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     i = 0
     for it in tqdm(range(max_iter)):
         i += 1
@@ -143,6 +150,7 @@ def run(N = 1000,ifsave=True,nam='model',use_pretrained=False,load_nam='model'):
             print(loss)
         if ~(torch.isnan(loss) | torch.isinf(loss)):
             loss.backward()
+#            torch.nn.utils.clip_grad_norm_(model.parameters(), clip_value)
             optimizer.step()
         
         loss_hist = np.append(loss_hist, loss.to('cpu').data.numpy())
