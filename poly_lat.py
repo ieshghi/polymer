@@ -28,13 +28,12 @@ else:
     torch_device = 'cpu'
     float_dtype = np.float64 # double
     torch.set_default_tensor_type(torch.DoubleTensor)
-    torch.set_num_threads(10)
+    torch.set_num_threads(20)
 
 print(f"TORCH DEVICE: {torch_device}")
 
-def smoothstep(x): #logistic function with a given steepness
-    k = 20
-    return 1/(1+torch.exp(-k*(x-1)))
+def smoothstep(x,k=5): #logistic function with a given steepness
+    return (1 - 1/(1+torch.exp(-k*(x-1))))
 
 class rescale_layer(nn.Module): #want model outputs to be exactly in the range [-0.5,0.5] so we use this sigmoid function, but rescaled so that for most inputs near 0 it doesn't warp them too much
     def __init__(self):
@@ -54,21 +53,25 @@ class energyfunc_loss(nn.Module): #give a penalty = sigma for each overlapping p
         self.ltouch = ltouch #distance at which contacts are registered
         self.lcol = lcol #distance below which monomers are not allowed to go
         self.N = N
+        self.triu_inds = torch.triu_indices(N,N,offset=2)
         self.contact_logexp = self.get_contact_exp().log()
-        self.eps = 1e-8
+
+#    def forward(self,confdata):
+#        return torch.sum(confdata**2)
 
     def forward(self,confdata):
+        num_samples = confdata.shape[0]
         polymers = randtopoly(confdata)
         distances = torch.cdist(polymers,polymers)
-        
-#        dists = torch.triu(distances)
-#        dists = dists[dists>0]
-#        collision_energy = self.sigma*torch.sum(1-smoothstep(dists/self.lcol)) #punish collisions with a smoothed step function
-        contacts = (self.eps + torch.sum(1-smoothstep(distances/self.ltouch),axis=0)).triu(diagonal=2)
-        fractal_loss = self.contacts_kld(contacts[contacts>0])
+        tridists = distances[:,self.triu_inds[0],self.triu_inds[1]]
 
-#        tot_energy = collision_energy + fractal_loss
-        tot_loss = fractal_loss
+       
+        collision_energy = torch.sum(smoothstep(tridists/self.lcol))/(self.N*num_samples) #punish collisions with a smoothed step function
+#        contacts = (torch.sum(smoothstep(tridists/self.ltouch),axis=0))
+#        fractal_loss = self.contacts_kld(contacts)
+#
+#        tot_loss = collision_energy + fractal_loss
+        tot_loss = collision_energy
         return tot_loss
 
     def check_constraints(self,positions):
@@ -81,8 +84,8 @@ class energyfunc_loss(nn.Module): #give a penalty = sigma for each overlapping p
             smat[i,:] = torch.abs(inds-i)
 
         pmat = (1.0/smat).triu(diagonal=2)
-        pmat_norm = (pmat/torch.sum(pmat)).triu(diagonal=2)
-        return pmat_norm[pmat_norm>0]
+        pmat_norm = (pmat/torch.sum(pmat))
+        return pmat_norm[self.triu_inds[0],self.triu_inds[1]]
 
     def contacts_kld(self,contacts):
         probs = contacts/torch.sum(contacts) 
@@ -126,7 +129,7 @@ def run(N = 1000,ifsave=True,nam='model',use_pretrained=False,load_nam='model'):
         model = torch.load('models/'+nam+'.pickle')
         loss_func = energyfunc_loss()
     else:
-        model,loss_func = get_raw_model_and_loss(N,num_layers=20)
+        model,loss_func = get_raw_model_and_loss(N,num_layers=10)
     
     model = model.to(torch_device)
     loss_func = loss_func.to(torch_device)
@@ -134,11 +137,12 @@ def run(N = 1000,ifsave=True,nam='model',use_pretrained=False,load_nam='model'):
     max_iter = 10000
     show_iter = 100
     num_samples = 100
-#    clip_value = 5 #using gradient clipping
+    clip_value = 5 #using gradient clipping
     loss_hist = np.array([])
     
-#    torch.autograd.set_detect_anomaly(True)
+    torch.autograd.set_detect_anomaly(True)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    param_hist = []
     i = 0
     for it in tqdm(range(max_iter)):
         i += 1
@@ -150,7 +154,7 @@ def run(N = 1000,ifsave=True,nam='model',use_pretrained=False,load_nam='model'):
             print(loss)
         if ~(torch.isnan(loss) | torch.isinf(loss)):
             loss.backward()
-#            torch.nn.utils.clip_grad_norm_(model.parameters(), clip_value)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), clip_value)
             optimizer.step()
         
         loss_hist = np.append(loss_hist, loss.to('cpu').data.numpy())
@@ -163,4 +167,4 @@ def run(N = 1000,ifsave=True,nam='model',use_pretrained=False,load_nam='model'):
         plt.plot(loss_hist, label='loss')
         plt.legend()
         plt.savefig('/gpfs/commons/home/ieshghi/public_html/polygen/loss_hist.png')
-    return loss_hist,model
+    return loss_hist,model,param_hist
