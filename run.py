@@ -1,4 +1,3 @@
-from poly_lat import rescale_layer
-import poly_lat as pl
+import poly_points as pl
 
-pl.run(N=1000)
+pl.run(N=100,nam='points_100beads_fractal')

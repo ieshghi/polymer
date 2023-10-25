@@ -1,91 +1,86 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.spatial import cKDTree
 import poly_points as pl
 import torch
 
-def draw_polymer(conf,nam='plot'):
+sns.set_theme()
+
+def draw_polymer(model,nam='plot'):
     plt.close('all')
+    n_plot = 3 
+    n_data = 100
+    conf = model(model.q0.sample(n_data))
     polys,steps = pl.randtopoly(conf)
     steplengths = np.linalg.norm(steps.cpu().detach().numpy(),axis = 2)
-    n_poly = polys.shape[0]
-    ax = plt.figure().add_subplot(projection='3d')
+
+    poly_len = polys.shape[1]
+
+    loss_f = pl.energyfunc_loss(poly_len)
+
+    fig = plt.figure(figsize=(10,10))
+    ax = fig.add_subplot(projection='3d')
     cmap = plt.get_cmap('plasma')
-    colors = [cmap(i) for i in np.linspace(0, 1, n_poly)]
-    for i in range(n_poly):
+    colors = [cmap(i) for i in np.linspace(0, 1, n_plot)]
+    for i in range(n_plot):
         poly = polys[i].cpu().detach().numpy()
         color = colors[i]
-        ax.plot(poly[:,0],poly[:,1],poly[:,2],'-',color=color)
+        ax.plot(poly[:,0],poly[:,1],poly[:,2],'-',color=color,alpha=0.7)
     plt.savefig('/gpfs/commons/home/ieshghi/public_html/polygen/'+nam+'.png')
     plt.close('all')
 
     msds = msd(polys)
-    fig,(ax1,ax2) = plt.subplots(2,1)
     nv = np.arange(0,polys.shape[1]-1)
-    ax1.loglog(nv,msds)
-    ax1.loglog(nv,nv**(6/5),'--')
-    ax1.loglog(nv,nv,'--')
-    ax1.loglog(nv,nv**(2/3),'--')
-    ax2.hist(steplengths.flatten(),100)
+
+    fig = plt.figure(figsize=(10,18))
+    ax1 = fig.add_subplot(3,1,1)
+    ax1.loglog(nv,msds,'.',label='Simulated chains')
+    ax1.loglog(nv,0.1*nv**(2/3),'--',label='Fracal Globule scaling')
+    ax1.set_xlabel('s')
+    ax1.set_ylabel('MSD')
+    ax1.legend()
+    ax2 = fig.add_subplot(3,1,2)
+    sns.histplot(steplengths.flatten())
+    ax2.set_xlabel('Bond lengths')
+    ax3 = fig.add_subplot(3,1,3)
+    svals = calculate_contacts(polys,cutoff=0.8)    
+    ax3.set_xlabel('s')
+    log_s = np.log10(svals)
+    sns.kdeplot(svals,log_scale=(10,10),clip=(1,100))
+    xv = np.linspace(10,100,2)
+    ax3.plot(xv,5*xv**(-1),'--',label='fractal scaling')
+    ax3.legend()
+#    ax3.plot(bins,bins**(-1)*10**5)
+#    ax3.set_yscale('log')
+#    ax3.set_xscale('log')
+
+    fig.tight_layout()
     plt.savefig('/gpfs/commons/home/ieshghi/public_html/polygen/'+nam+'_msd.png')
 
-def xydist_point(conf,n=np.inf,nam='plot'):
-    plt.close('all')
-    loss_func = energyfunc_loss()
-    n_poly = conf.shape[0]
-    conf_list = [conf[i,:] for i in range(n_poly)]
-    poly_list = list(map(loss_func.get_poly,conf_list))
-    if np.isinf(n):
-        n = poly_list[0].shape[0]-1
-    for i in range(n_poly):
-        poly = poly_list[i].detach().numpy()
-        plt.plot(poly[n,0],poly[n,1],'k.')
-    plt.savefig('/gpfs/commons/home/ieshghi/public_html/polygen/'+nam+'.png')
+def calculate_contacts(data, cutoff=0.8):
+    #stolen from mirnylab's Polychrom package
+    """Calculates contacts between points given the contact radius (cutoff) 
 
-def conf_compare(conf1,conf2,nam = 'plot'):
-    plt.close('all')
-    loss_func = energyfunc_loss()
-    n1 = conf1.shape[0]
-    conf1_list = [conf1[i,:] for i in range(n1)]
-    n2 = conf2.shape[0]
-    conf2_list = [conf2[i,:] for i in range(n2)]
-    poly1 = list(map(loss_func.get_poly,conf1_list))
-    poly2 = list(map(loss_func.get_poly,conf2_list))
-    msd1_list = list(map(msd,poly1))
-    msd2_list = list(map(msd,poly2))
-    n1_step = msd1_list[0].shape[0]
-    n2_step = msd2_list[0].shape[0]
-    t1 = np.arange(n1_step)
-    t2 = np.arange(n2_step)
-    msd1_mean = np.nanmean(msd1_list,axis=0)
-    msd2_mean = np.nanmean(msd2_list,axis=0)
-#    for i in range(n_samp):
-#        plt.loglog(t,msd_list[i])
-    plt.loglog(t1,msd1_mean,'-',label='Data 1')
-    plt.loglog(t2,msd2_mean,'--',label='Data 2')
-    plt.loglog(t1,np.ones(t1.shape)*n1_step**(1/3)*1.5,'k--')
-    plt.legend()
-    plt.savefig('/gpfs/commons/home/ieshghi/public_html/polygen/'+nam+'.png')
-    return msd1_mean,msd2_mean
+    Parameters
+    ----------
+    data : Nx3 array
+        Coordinates of points
+    cutoff : float , optional
+        Cutoff distance (contact radius)
 
-def conf_analyze(confdata,nam = 'plot'):
-    plt.close('all')
-    loss_func = energyfunc_loss()
-    n_samp = confdata.shape[0]
-    conf_list = [confdata[i,:] for i in range(n_samp)]
-    poly_list = list(map(loss_func.get_poly,conf_list))
-    msd_list = list(map(msd,poly_list))
-    n_step = msd_list[0].shape[0]
-    t = np.arange(n_step)
-    msd_mean = np.mean(msd_list,axis=0)
-#    for i in range(n_samp):
-#        plt.loglog(t,msd_list[i])
-    plt.loglog(t,msd_mean,'-',label='Data')
-    plt.loglog(t,10*t,'--',label='Random Walk')
-    plt.loglog(t,10*t**(6/5),'--',label='SAW')
-    plt.legend()
-    plt.savefig('/gpfs/commons/home/ieshghi/public_html/polygen/'+nam+'.png')
-    return msd_list
-    
+    Returns
+    -------
+    k by 2 array of contacts. Each row corresponds to a contact.
+    """
+    svals = np.zeros(0)
+    for i in range(data.shape[0]):
+        tree = cKDTree(data[i].cpu().detach().numpy())
+        pairs = tree.query_pairs(cutoff, output_type="ndarray")
+        svals = np.append(svals,np.diff(pairs,axis=1).flatten())
+
+    return svals
+
 def msd(xyz):
     nb = xyz.shape[0]
     n = xyz.shape[1]

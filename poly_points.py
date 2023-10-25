@@ -36,45 +36,66 @@ def smoothstep(x,k=10): #logistic function with a given steepness
     return (1 - 1/(1+torch.exp(-k*(x-1))))
 
 class energyfunc_loss(nn.Module): #give a penalty = sigma for each overlapping pair of monomers
-    def __init__(self,N,k = 10,sigma = 10,lcol = 0.2,ltouch = 0.5,constraints = False): #assume step size is unit length, lcol is collision distance
+    def __init__(self,N,k = 10,k_theta = 1,sigma = 1,fractal_sigma = 10,lcol = 0.1,ltouch = 0.5,constraints = False): #assume step size is unit length, lcol is collision distance
         super(energyfunc_loss, self).__init__()
         self.k = k #spring stiffness
+        self.k_theta = k_theta #angle stiffness
         self.sigma = sigma #interaction energy for overlapping monomers, in units of K_b T. Probability of overlap should scale like exp(-sigma)
+        self.fractal_sigma = fractal_sigma #
         self.constraints = constraints #for when we want to eventually include constraints from pore-c or something
         self.ltouch = ltouch #distance at which contacts are registered
         self.lcol = lcol #distance below which monomers are not allowed to go
         self.N = N
         self.triu_inds = torch.triu_indices(N,N,offset=2)
         self.contact_logexp = self.get_contact_exp().log()
-        self.eps = 1e-10
+        self.eps = 1e-12
 
     def forward(self,confdata):
         num_samples = confdata.shape[0]
         polymers,steps = randtopoly(confdata)
         distances = torch.cdist(polymers,polymers)
+#        cos_angles = self.get_angles(steps) 
         tridists = distances[:,self.triu_inds[0],self.triu_inds[1]]
        
         spring_energy = self.k*torch.mean((torch.norm(steps,dim=2)-1)**2)
-        batchmean_collisions = torch.mean(smoothstep(tridists/self.lcol),axis=0) #punish collisions with a smoothed step function
-        collision_energy = self.sigma*torch.sum(batchmean_collisions)/self.N**2
-        contacts = (self.eps + torch.sum(smoothstep(tridists/self.ltouch),axis=0))
-        fractal_loss = self.contacts_kld(contacts)
 
-        tot_loss = spring_energy + collision_energy + fractal_loss
+        angle_energy = 0#self.k_theta*torch.mean(1-cos_angles)
+
+        batchmean_collisions = torch.mean(smoothstep(tridists/self.lcol),axis=0) #punish collisions with a smoothed step function
+
+        collision_energy = self.sigma*torch.sum(batchmean_collisions)
+
+        contacts = (self.eps + torch.sum(smoothstep(tridists/self.ltouch),axis=0))
+        fractal_loss = self.fractal_sigma*self.contacts_kld(contacts)
+
+        tot_loss = spring_energy + angle_energy + collision_energy + fractal_loss
         return tot_loss
 
     def check_constraints(self,positions):
         return 0
 
     def get_contact_exp(self):
+        smat = self.get_svals()
+        pmat = (1.0/smat).triu(diagonal=2)
+        pmat_norm = (pmat/torch.sum(pmat))
+        return pmat_norm[self.triu_inds[0],self.triu_inds[1]]
+
+    def get_svals(self):
         inds = torch.arange(self.N)
         smat = torch.zeros(self.N,self.N)
         for i in range(self.N):
             smat[i,:] = torch.abs(inds-i)
+        return smat
 
-        pmat = (1.0/smat).triu(diagonal=2)
-        pmat_norm = (pmat/torch.sum(pmat))
-        return pmat_norm[self.triu_inds[0],self.triu_inds[1]]
+    def get_angles(self,steps):
+        incoming = steps[:,:-1,:]
+        outgoing = steps[:,1:,:]
+        in_hat = nn.functional.normalize(incoming,dim=2)
+        out_hat = nn.functional.normalize(outgoing,dim=2)
+          
+        cos_th = torch.sum(in_hat*out_hat,axis=2)
+
+        return cos_th.flatten()
 
     def contacts_kld(self,contacts):
         probs = contacts/torch.sum(contacts) 
@@ -88,6 +109,7 @@ def randtopoly(confdata):#data comes in with size BxNxD
 
     steps = confdata.reshape(nb,N-2,3).transpose(0,1) #switch over to NxBxD
     steps = torch.cat([torch.zeros(1,nb,dim),steps])
+    
     steps[0,:,2] = 1
     
     poly = torch.cat([torch.zeros(1,nb,dim),steps.cumsum(axis=0)])
@@ -96,7 +118,7 @@ def randtopoly(confdata):#data comes in with size BxNxD
 def get_raw_model_and_loss(N,num_layers=5,inner_layer_dim=64): 
     #given a polymer size N, returns the network to be trained as well as the loss function for that polymer shape
 
-    assert(N%2==0,"N must be even")
+    assert N%2 == 0,"N must be even"
     dof = 3*(N-2)
     prior = nf.distributions.DiagGaussian(dof) #prior is just Gaussian for each mode
     flow_layers = []
@@ -111,22 +133,22 @@ def get_raw_model_and_loss(N,num_layers=5,inner_layer_dim=64):
 def run(N = 1000,ifsave=True,nam='model',use_pretrained=False,load_nam='model'):
     
     if use_pretrained:
-        model = torch.load('models/'+nam+'.pickle')
-        loss_func = energyfunc_loss()
+        model = torch.load('models/'+load_nam+'.pickle')
+        loss_func = energyfunc_loss(N)
     else:
-        model,loss_func = get_raw_model_and_loss(N,num_layers=20)
+        model,loss_func = get_raw_model_and_loss(N,num_layers=10)
     
     model = model.to(torch_device)
     loss_func = loss_func.to(torch_device)
 
-    max_iter = 50000
+    max_iter = 1000
     show_iter = 100
-    num_samples = 50
+    num_samples = 1000
     #clip_value = 5 #using gradient clipping
     loss_hist = np.array([])
     
     torch.autograd.set_detect_anomaly(True)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
     param_hist = []
     i = 0
     for it in tqdm(range(max_iter)):
