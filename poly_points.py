@@ -49,6 +49,7 @@ class energyfunc_loss(nn.Module): #give a penalty = sigma for each overlapping p
         self.triu_inds = torch.triu_indices(N,N,offset=2)
         self.contact_logexp = self.get_contact_exp().log()
         self.eps = 1e-12
+        self.smat = self.get_svals()
 
     def forward(self,confdata):
         num_samples = confdata.shape[0]
@@ -61,18 +62,24 @@ class energyfunc_loss(nn.Module): #give a penalty = sigma for each overlapping p
 
         angle_energy = 0#self.k_theta*torch.mean(1-cos_angles)
 
-        batchmean_collisions = torch.mean(smoothstep(tridists/self.lcol),axis=0) #punish collisions with a smoothed step function
+#        batchmean_collisions = torch.mean(smoothstep(tridists/self.lcol),axis=0) #punish collisions with a smoothed step function
 
-        collision_energy = self.sigma*torch.sum(batchmean_collisions)
+        collision_energy = 0#self.sigma*torch.sum(batchmean_collisions)
 
         contacts = (self.eps + torch.sum(smoothstep(tridists/self.ltouch),axis=0))
-        fractal_loss = self.fractal_sigma*self.contacts_kld(contacts)
+        #fractal_loss = self.fractal_sigma*self.contacts_kld(contacts)
+        fractal_loss = self.fractal_sigma*self.fractal_polov_energy(tridists)
 
         tot_loss = spring_energy + angle_energy + collision_energy + fractal_loss
         return tot_loss
 
     def check_constraints(self,positions):
         return 0
+    
+    def fractal_polov_energy(self,tridists): #https://arxiv.org/abs/1707.07153 shows that with quadratic interactions any fBm fractal dimension can be achieved
+        gamma = 8/3 
+        triu_s = self.smat[self.triu_inds[0],self.triu_inds[1]]
+        return torch.mean((triu_s*tridists**2).flatten())
 
     def get_contact_exp(self):
         smat = self.get_svals()
